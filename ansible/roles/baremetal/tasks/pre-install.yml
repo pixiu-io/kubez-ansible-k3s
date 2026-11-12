@@ -83,7 +83,7 @@
 # 1. 使用官方源
 - name: Prepare official repos for all of the nodes
   block:
-    - name: Copy container runtime repos for kubernetes nodes
+    - name: Copy OS package sources for kubernetes nodes
       template:
         src: "{{ item.src | find_custom_repo(dest=item.dest, repo_dir=repo_dir) }}"
         dest: "{{ item.dest }}"
@@ -99,6 +99,8 @@
       when:
         - ansible_distribution == 'Ubuntu' or
           ansible_distribution == 'Debian'
+
+    - name: Install epel-release packages
       yum:
         name: epel-release
         state: present
