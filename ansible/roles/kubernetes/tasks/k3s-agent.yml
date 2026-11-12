@@ -1,0 +1,48 @@
+---
+# k3s 工作节点部署：以 agent 身份加入集群
+# 依赖调用方预先设置 k3s_join_address 与 k3s_token
+- name: Ensure the k3s configuration directory exists
+  become: true
+  file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+  when:
+    - inventory_hostname in groups['kube-node']
+    - inventory_hostname not in groups['kube-master']
+
+- name: Generate the k3s agent configuration
+  become: true
+  template:
+    src: k3s-config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0644"
+  vars:
+    k3s_role: agent
+    k3s_join_server: false
+  when:
+    - inventory_hostname in groups['kube-node']
+    - inventory_hostname not in groups['kube-master']
+  register: k3s_agent_config
+
+- name: Generate the k3s agent systemd unit
+  become: true
+  template:
+    src: k3s-agent.service.j2
+    dest: /etc/systemd/system/k3s-agent.service
+    mode: "0644"
+  when:
+    - inventory_hostname in groups['kube-node']
+    - inventory_hostname not in groups['kube-master']
+  register: k3s_agent_unit
+
+- name: Start or restart the k3s agent
+  become: true
+  systemd:
+    name: k3s-agent
+    state: "{{ 'restarted' if (k3s_agent_config is changed or k3s_agent_unit is changed) else 'started' }}"
+    enabled: yes
+    daemon_reload: yes
+  when:
+    - inventory_hostname in groups['kube-node']
+    - inventory_hostname not in groups['kube-master']

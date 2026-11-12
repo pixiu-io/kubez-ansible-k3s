@@ -45,7 +45,7 @@ EXAMPLES = '''
   run_once: True
 '''
 
-KUBEADMIN = '/etc/kubernetes/admin.conf'
+KUBEADMIN = '/etc/rancher/k3s/k3s.yaml'
 TAINT_EXCEPTION = 'taint'
 
 

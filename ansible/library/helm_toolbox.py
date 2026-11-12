@@ -60,7 +60,7 @@ EXAMPLES = '''
       state: absent
 '''
 
-KUBECONFIG = '/etc/kubernetes/admin.conf'
+KUBECONFIG = '/etc/rancher/k3s/k3s.yaml'
 
 
 class Helm3Worker(object):

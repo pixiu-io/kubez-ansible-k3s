@@ -1,0 +1,25 @@
+---
+# 允许 Pod 调度到同时作为工作节点的控制面节点（k3s 默认不给 server 打 taint，这里保持幂等）
+- name: Taint master node when it is the worker node too
+  become: true
+  command: "k3s kubectl taint node {{ item.0 }} {{ item.1 }}-"
+  delegate_to: "{{ groups['kube-master'][0] }}"
+  run_once: True
+  changed_when: false
+  failed_when: false
+  when:
+    - item.0 in groups['kube-node']
+    - inventory_hostname != "localhost"
+  with_nested:
+    - "{{ groups['kube-master'] }}"
+    - "{{ control_labels }}"
+
+- name: Taint localhost node when the deploy mode is all-in-one
+  become: true
+  command: "k3s kubectl taint nodes --all {{ item }}-"
+  run_once: True
+  connection: local
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == "localhost"
+  loop: "{{ control_labels }}"

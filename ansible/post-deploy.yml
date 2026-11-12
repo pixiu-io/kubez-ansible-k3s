@@ -5,13 +5,20 @@
       file:
         path: ~/.kube
         state: directory
+        mode: '0700'
 
-    - name: Copy admin.conf to into ~/.kube/
+    - name: Copy k3s.yaml into ~/.kube/config
       copy:
-        src: /etc/kubernetes/admin.conf
+        src: /etc/rancher/k3s/k3s.yaml
         dest: ~/.kube/config
         remote_src: yes
         mode: '0600'
+
+    - name: Point kubeconfig to the local apiserver address
+      replace:
+        path: ~/.kube/config
+        regexp: 'https://127\.0\.0\.1:6443'
+        replace: "https://{{ api_interface_address }}:6443"
 
     - name: Install bash-completion package
       package:

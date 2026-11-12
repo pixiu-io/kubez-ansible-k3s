@@ -5,6 +5,9 @@
 network_interface: "eth0"
 api_interface: "{{ network_interface }}"
 api_interface_address: "{{ hostvars[inventory_hostname]['ansible_' + api_interface]['ipv4']['address'] }}"
+# 第一个 master 的 API 地址（k3s 加入集群的默认 server 地址）
+# 直接从目标主机的 facts 计算，避免 hostvars 取值被当前主机上下文模板化
+first_master_address: "{{ hostvars[groups['kube-master'][0]]['ansible_' + hostvars[groups['kube-master'][0]]['api_interface']]['ipv4']['address'] }}"
 
 # kubernetes 镜像仓库地址，默认阿里云，用户可根据实际情况配置
 image_repository: "registry.cn-hangzhou.aliyuncs.com/google_containers"
@@ -97,6 +100,32 @@ kube_release: 1.36.2
 kubernetes_version: "v{{ kube_release }}"
 
 ########################
+# K3s Options
+########################
+# 集群由 k3s 承载：kube_release 映射为 k3s 版本（如 1.36.2 -> v1.36.2+k3s1），
+# 也可在 globals.yml 直接覆盖 k3s_version
+k3s_version: "v{{ kube_release }}+k3s1"
+# 二进制架构自动识别（x86_64 -> amd64, aarch64 -> arm64）
+k3s_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+# k3s 下载源：github（严格对应版本）| cn（rancher 国内镜像站）
+k3s_download_source: "github"
+k3s_download_timeout: 600
+k3s_github_base_url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}"
+k3s_cn_base_url: "https://rancher-mirror.rancher.cn/k3s"
+k3s_binary_url: "{{ (k3s_github_base_url if k3s_download_source == 'github' else k3s_cn_base_url) }}/k3s{{ '' if k3s_arch == 'amd64' else '-' ~ k3s_arch }}"
+k3s_airgap_url: "{{ (k3s_github_base_url if k3s_download_source == 'github' else k3s_cn_base_url) }}/k3s-airgap-images-{{ k3s_arch }}.tar"
+# k3s 数据目录
+k3s_data_dir: "/var/lib/rancher/k3s"
+# 禁用的 k3s 内置组件：CNI / metrics-server / local-storage 等由 kubez-ansible apply 阶段统一安装
+k3s_disable_components:
+  - traefik
+  - servicelb
+  - metrics-server
+  - local-storage
+# CoreDNS 集群 DNS 地址，默认取 service_cidr 的第 4 位为 10（如 10.254.0.0/16 -> 10.254.0.10）
+cluster_dns: "{{ service_cidr.split('.')[0:3] | join('.') }}.10"
+
+########################
 # Add node options
 ########################
 # These values are maintained by the user and are used by add-node only.
@@ -112,6 +141,7 @@ kube_base_version: "{{ kube_release.split('.')[0] }}.{{ kube_release.split('.')[
 kube_release_ubuntu: "{{ kube_release ~ '-*' }}"
 
 # kube / runtime 包名按包管理器族区分，避免按发行版名枚举
+# k3s 模式下不再通过包管理器安装 kubelet/kubeadm，以下变量保留仅为兼容旧 globals.yml
 kube_packages_apt:
   - "kubelet={{ kube_release_ubuntu }}"
   - "kubectl={{ kube_release_ubuntu }}"
@@ -124,7 +154,7 @@ kube_packages_rpm:
 ##################
 # Runtime Options
 ##################
-# Kubernetes CRI 仅支持 containerd（docker 作为 CRI 已移除）
+# 集群运行时为 k3s 内嵌 containerd，以下 runtime/containerd 包变量保留仅为兼容旧 globals.yml，实际不再使用
 # runtime containerd version
 containerd_release: ""
 # runtime data-root-dir

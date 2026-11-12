@@ -1,6 +1,10 @@
 # Kubez-ansible Overview
 
-To provide quick deployment tools for kubernetes cluster and cloud native application
+To provide quick deployment tools for k3s cluster and cloud native application
+
+> 从本版本起，集群部署后端由 kubeadm（K8s）切换为 k3s（server/agent）。`kubez-ansible` 子命令
+> （`bootstrap-servers` / `deploy` / `deploy-master` / `deploy-node` / `add-node` / `apply` /`pull` /
+> `post-deploy` / `destroy`）与 `/etc/kubez/globals.yml` 入参保持不变，仅内部部署任务改为 k3s 语义。
 
 ![Build Status][build-url]
 [![Release][release-image]][release-url]

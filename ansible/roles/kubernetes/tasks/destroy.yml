@@ -1,11 +1,71 @@
 ---
-- name: Reset kubernetes cluster
+- name: Stop and disable k3s services
   become: true
-  kube_toolbox:
-    module_name: kubeadm
-    module_args: "reset -f"
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  failed_when: false
+  loop:
+    - k3s
+    - k3s-agent
   when:
     - inventory_hostname in groups['kubernetes']
+
+- name: Remove k3s systemd unit files
+  become: true
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/k3s.service
+    - /etc/systemd/system/k3s-agent.service
+    - /etc/systemd/system/k3s.service.env
+    - /etc/systemd/system/k3s-agent.service.env
+  when:
+    - inventory_hostname in groups['kubernetes']
+
+- name: Remove k3s binaries and command symlinks
+  become: true
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/bin/k3s
+    - /usr/local/bin/kubectl
+    - /usr/local/bin/crictl
+    - /usr/local/bin/ctr
+  when:
+    - inventory_hostname in groups['kubernetes']
+
+- name: Remove k3s data and configuration directories
+  become: true
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ k3s_data_dir }}"
+    - /etc/rancher
+    - /run/k3s
+    - /run/flannel
+    - /var/lib/kubelet
+  when:
+    - inventory_hostname in groups['kubernetes']
+
+- name: Reload systemd after removing k3s units
+  become: true
+  systemd:
+    daemon_reload: yes
+  when:
+    - inventory_hostname in groups['kubernetes']
+
+- name: Remove kubeconfig for k3s cluster
+  become: true
+  file:
+    path: ~/.kube/config
+    state: absent
+  when:
+    - inventory_hostname in groups['kube-master']
 
 - name: Clean up for kubernetes worker dirs
   become: true
@@ -18,17 +78,14 @@
 - name: Print destroy results
   debug:
     msg: >-
-      The reset process does not clean CNI configuration. To do so, you must remove /etc/cni/net.d
+      The destroy process does not clean CNI configuration. To do so, you must remove /etc/cni/net.d
 
-      The reset process does not reset or clean up iptables rules or IPVS tables.
+      The destroy process does not reset or clean up iptables rules or IPVS tables.
       If you wish to reset iptables, you must do so manually by using the "iptables" command.
 
       If your cluster was setup to utilize IPVS, run ipvsadm --clear (or similar)
       to reset your system's IPVS tables.
 
-      The reset process does not clean your kubeconfig files and you must remove them manually.
-      Please, check the contents of the $HOME/.kube/config file.
-
-      The reset process does not destroy haproxy and keepalived if enabled and you must stop them manually.
+      The destroy process does not destroy haproxy and keepalived if enabled and you must stop them manually.
   connection: local
   run_once: True

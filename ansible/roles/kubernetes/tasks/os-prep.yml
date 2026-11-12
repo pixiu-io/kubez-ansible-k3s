@@ -1,0 +1,41 @@
+---
+# k3s 节点 OS 预处理：内核模块、sysctl、关闭 swap
+# os_prep_scope: 生效的 inventory 组（kubernetes / kube-master / kube-node）
+- name: Load and persist k3s required kernel modules
+  import_role:
+    role: module-load
+  vars:
+    modules:
+      - { "name": br_netfilter }
+      - { "name": overlay }
+      - { "name": nf_conntrack }
+      - { "name": ip_vs }
+      - { "name": ip_vs_wrr }
+      - { "name": ip_vs_sh }
+      - { "name": ip_vs_rr }
+  when: inventory_hostname in groups[os_prep_scope]
+
+- name: Setting sysctl values
+  become: true
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: yes
+  loop:
+    - { name: "net.bridge.bridge-nf-call-ip6tables", value: 1 }
+    - { name: "net.bridge.bridge-nf-call-iptables", value: 1 }
+    - { name: "net.ipv4.ip_forward", value: 1 }
+  when: inventory_hostname in groups[os_prep_scope]
+
+- name: Disable swap for k3s cluster
+  block:
+    - name: Disable swap temporary
+      shell: swapoff -a
+      changed_when: false
+
+    - name: Remove swap from /etc/fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: ".*swap.*"
+        state: absent
+  when: inventory_hostname in groups[os_prep_scope]

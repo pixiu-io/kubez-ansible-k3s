@@ -18,110 +18,47 @@
     - enable_haproxy | bool
     - inventory_hostname in groups['haproxy']
 
-# kube 包按包管理器安装：apt 用 =version，yum/dnf 用 -version
-- name: Install kubernetes packages
-  block:
-    - name: Fail when package manager is unsupported for kubernetes packages
-      fail:
-        msg: >-
-          安装 kubernetes 包仅支持 apt / yum / dnf，当前 ansible_pkg_mgr={{ ansible_pkg_mgr }}
-          (ansible_distribution={{ ansible_distribution }})
-      when:
-        - ansible_pkg_mgr not in ['apt', 'yum', 'dnf']
-
-    - name: Install kubernetes and its indepent packages
-      package:
-        name: "{{ item }}"
-        state: present
-        use: "{{ ansible_pkg_mgr }}"
-      loop: "{{ kube_packages_apt if ansible_pkg_mgr == 'apt' else kube_packages_rpm }}"
-
-    # Somethings service module invoke enable command failed,
-    # but I do not know the reason, use shell module to avoid.
-    # The failed message is like:
-    # "Could not find the requested service kubelet: host"
-    - name: Enable kubelet service
-      shell: systemctl enable kubelet
-      changed_when: false
+# k3s 为单二进制发行版，自带 containerd / kubectl / kubelet，
+# 不再安装 kubelet/kubeadm/containerd 包，也不再渲染 /etc/containerd/config.toml
+- name: Check the installed k3s version
+  become: true
+  command: /usr/local/bin/k3s --version
+  register: k3s_installed_version
+  changed_when: false
+  failed_when: false
   when:
     - inventory_hostname in groups['kubernetes']
 
-- name: Install containerd runtime for kubernetes
-  package:
-    name: "{{ containerd_package_ubuntu if ansible_distribution == 'Ubuntu' else (containerd_package_apt if ansible_pkg_mgr == 'apt' else containerd_package_rpm) }}"
-    state: present
-    use: "{{ ansible_pkg_mgr }}"
+- name: Install the k3s binary
+  become: true
+  get_url:
+    url: "{{ k3s_binary_url }}"
+    dest: /usr/local/bin/k3s
+    mode: "0755"
+    timeout: "{{ k3s_download_timeout }}"
   when:
-    - inventory_hostname in groups['containerd-master'] or
-      inventory_hostname in groups['containerd-node']
-    - ansible_pkg_mgr in ['apt', 'yum', 'dnf']
+    - inventory_hostname in groups['kubernetes']
+    - k3s_installed_version.rc | default(1) != 0 or k3s_version not in (k3s_installed_version.stdout | default(''))
 
-- name: Ensure /etc/containerd directories exists
+- name: Create k3s command symlinks
+  become: true
   file:
-    path: /etc/containerd
-    state: directory
-  when:
-    - inventory_hostname in groups['containerd-master'] or
-      inventory_hostname in groups['containerd-node']
-
-- name: Configure custom containerd registry certificates
-  block:
-    - name: Set containerd custom registry fact
-      set_fact:
-        containerd_custom_registry: "{{ image_repository | regex_replace('^https?://', '') | regex_replace('/.*$', '') }}"
-
-    - name: Ensure custom registry certs.d directory exists
-      file:
-        path: "/etc/containerd/certs.d/{{ containerd_custom_registry }}"
-        state: directory
-        mode: "0755"
-
-    - name: Copy custom registry hosts.toml
-      copy:
-        dest: "/etc/containerd/certs.d/{{ containerd_custom_registry }}/hosts.toml"
-        content: |
-          server = "http://{{ containerd_custom_registry }}"
-
-          [host."http://{{ containerd_custom_registry }}"]
-            capabilities = ["pull", "resolve", "push"]
-        mode: "0644"
-  when:
-    - enable_custom_repo | bool
-    - inventory_hostname in groups['containerd-master'] or
-      inventory_hostname in groups['containerd-node']
-
-- name: Get the containerd sandbox image
-  kube_toolbox:
-    module_name: kubeadm
-    module_args: "config images list"
-    module_extra_vars:
-      image-repository: "{{ image_repository }}"
-      kubernetes-version: "{{ kubernetes_version }}"
-  register: sandbox_result
+    src: /usr/local/bin/k3s
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    force: yes
+  loop:
+    - kubectl
+    - crictl
+    - ctr
   when:
     - inventory_hostname in groups['kubernetes']
 
-- name: Copy containerd config.toml
-  vars:
-    sandbox_image: "{{ sandbox_result['result']['sandbox_image'] }}"
-  template:
-    src: config.toml.j2
-    dest: /etc/containerd/config.toml
+- name: Ensure the k3s configuration directory exists
+  become: true
+  file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
   when:
-    - inventory_hostname in groups['containerd-master'] or
-      inventory_hostname in groups['containerd-node']
-  notify:
-    - Restart containerd service
-
-- name: Check containerd service status
-  service_check:
-    service_name: containerd
-    service_type: systemd
-  when:
-    - inventory_hostname in groups['containerd-master'] or
-      inventory_hostname in groups['containerd-node']
-  notify:
-    - Restart containerd service
-
-- name: Flush handlers
-  meta: flush_handlers
+    - inventory_hostname in groups['kubernetes']

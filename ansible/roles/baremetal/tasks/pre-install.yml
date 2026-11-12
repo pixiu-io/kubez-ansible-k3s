@@ -90,52 +90,15 @@
       loop:
         - {"src": sources.list.j2, "dest": /etc/apt/sources.list, os: "Ubuntu"}
         - {"src": sources.list.debian.j2, "dest": /etc/apt/sources.list, os: "Debian"}
-        - {"src": docker-ce.repo.j2, "dest": /etc/yum.repos.d/docker-ce.repo, os: "Rocky"}
-        - {"src": kubernetes.repo.j2, "dest": /etc/yum.repos.d/kubernetes.repo, os: "Rocky"}
-        - {"src": docker-ce.repo-openEuler.j2, "dest": /etc/yum.repos.d/docker-ce.repo, os: "openEuler"}
-        - {"src": kubernetes.repo.j2, "dest": /etc/yum.repos.d/kubernetes.repo, os: "openEuler"}
-        - {"src": docker-ce.repo-almalinux.j2, "dest": /etc/yum.repos.d/docker-ce.repo, os: "AlmaLinux"}
-        - {"src": kubernetes.repo.j2, "dest": /etc/yum.repos.d/kubernetes.repo, os: "AlmaLinux"}
-        - {"src": kubernetes.repo.j2, "dest": /etc/yum.repos.d/kubernetes.repo, os: "Kylin Linux Advanced Server"}
-        - {"src": docker-ce.repo-openEuler.j2, "dest": /etc/yum.repos.d/docker-ce.repo, os: "Kylin Linux Advanced Server"}
       when:
         - ansible_distribution == item.os
 
-    - name: Add kubernetes gpg
-      gpg_key:
-        url: 'https://mirrors.aliyun.com/kubernetes-new/core/stable/v{{ kube_base_version }}/deb/Release.key'
-        output_path: "/etc/apt/keyrings/kubernetes-{{ kube_base_version }}-apt-keyring.gpg"
-      when:
-        - ansible_distribution == 'Ubuntu' or
-          ansible_distribution == 'Debian'
-        - release_bump
-
-    # apt-key 在 apt>=2.9.17/3.0（Ubuntu 25.04+、Debian 13+）已被移除；
-    # 改用本仓库 gpg_key 模块，把密钥以独立 keyring 写入 trusted.gpg.d
-    # （等价 apt-key 的全局信任语义，sources 模板无需 signed-by 变更）
-    - name: Add docker, and kubernetes gpgs
-      gpg_key:
-        url: "{{ item.url }}"
-        output_path: "{{ item.path }}"
-      loop:
-        - { url: 'https://mirrors.aliyun.com/kubernetes/apt/doc/apt-key.gpg',
-            path: '/etc/apt/trusted.gpg.d/kubernetes-legacy.gpg' }
-        - { url: 'https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg',
-            path: '/etc/apt/trusted.gpg.d/docker-ce-ubuntu.gpg' }
-        - { url: 'https://mirrors.huaweicloud.com/docker-ce/linux/debian/gpg',
-            path: '/etc/apt/trusted.gpg.d/docker-ce-debian.gpg' }
-      when:
-        - ansible_distribution == 'Ubuntu' or
-          ansible_distribution == 'Debian'
-
-    - name: Update kubernetes source before used
+    - name: Update apt source before used
       apt:
         update_cache: yes
       when:
         - ansible_distribution == 'Ubuntu' or
           ansible_distribution == 'Debian'
-
-    - name: Install epel-release packages
       yum:
         name: epel-release
         state: present

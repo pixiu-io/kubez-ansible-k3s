@@ -1,0 +1,118 @@
+---
+# k3s 控制面部署：
+# 1) 第一个 kube-master 用 k3s server 初始化集群（多 master 时自动启用内嵌 etcd）
+# 2) 读取 node-token
+# 3) 其余 kube-master 在 enable_kubernetes_ha 时以 server 身份加入
+- name: Ensure the k3s configuration directory exists
+  become: true
+  file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+  when: inventory_hostname in groups['kube-master']
+
+- name: Generate the k3s configuration for the first server
+  become: true
+  template:
+    src: k3s-config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0644"
+  vars:
+    k3s_role: server
+    k3s_join_server: false
+  when: inventory_hostname == groups['kube-master'][0]
+  register: k3s_first_server_config
+
+- name: Generate the k3s server systemd unit for the first server
+  become: true
+  template:
+    src: k3s-server.service.j2
+    dest: /etc/systemd/system/k3s.service
+    mode: "0644"
+  when: inventory_hostname == groups['kube-master'][0]
+  register: k3s_first_server_unit
+
+- name: Start the first k3s server
+  become: true
+  systemd:
+    name: k3s
+    state: "{{ 'restarted' if (k3s_first_server_config is changed or k3s_first_server_unit is changed) else 'started' }}"
+    enabled: yes
+    daemon_reload: yes
+  when: inventory_hostname == groups['kube-master'][0]
+
+- name: Wait for the first k3s server token to be generated
+  become: true
+  wait_for:
+    path: "{{ k3s_data_dir }}/server/node-token"
+    timeout: 300
+  delegate_to: "{{ groups['kube-master'][0] }}"
+  run_once: True
+
+- name: Wait for the first k3s apiserver to be ready
+  wait_for:
+    host: "{{ api_interface_address }}"
+    port: 6443
+    timeout: 300
+  when: inventory_hostname == groups['kube-master'][0]
+
+- name: Read the k3s cluster token from the first server
+  become: true
+  command: "cat {{ k3s_data_dir }}/server/node-token"
+  register: k3s_token_result
+  changed_when: false
+  delegate_to: "{{ groups['kube-master'][0] }}"
+  run_once: True
+
+- name: Set the k3s cluster token
+  set_fact:
+    k3s_token: "{{ k3s_token_result.stdout | trim }}"
+  changed_when: false
+  connection: local
+  run_once: True
+
+- name: Generate the k3s configuration for the rest of the servers
+  become: true
+  template:
+    src: k3s-config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0644"
+  vars:
+    k3s_role: server
+    k3s_join_server: true
+  when:
+    - inventory_hostname in groups['kube-master']
+    - inventory_hostname != groups['kube-master'][0]
+    - enable_kubernetes_ha | bool
+  register: k3s_server_config
+
+- name: Generate the k3s server systemd unit for the rest of the servers
+  become: true
+  template:
+    src: k3s-server.service.j2
+    dest: /etc/systemd/system/k3s.service
+    mode: "0644"
+  when:
+    - inventory_hostname in groups['kube-master']
+    - inventory_hostname != groups['kube-master'][0]
+    - enable_kubernetes_ha | bool
+  register: k3s_server_unit
+
+- name: Start the rest of k3s server nodes
+  become: true
+  systemd:
+    name: k3s
+    state: "{{ 'restarted' if (k3s_server_config is changed or k3s_server_unit is changed) else 'started' }}"
+    enabled: yes
+    daemon_reload: yes
+  when:
+    - inventory_hostname in groups['kube-master']
+    - inventory_hostname != groups['kube-master'][0]
+    - enable_kubernetes_ha | bool
+
+- name: Wait for the k3s apiserver to be ready on all server nodes
+  wait_for:
+    host: "{{ api_interface_address }}"
+    port: 6443
+    timeout: 300
+  when: inventory_hostname in groups['kube-master']

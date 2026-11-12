@@ -6,3 +6,13 @@
   when:
     - kube_vip_address == ''
     - enable_kubernetes_ha | bool
+
+# k3s 多 master 依赖内嵌 etcd 组建控制面，未开启 HA 时第二个 master 会成为独立集群
+- name: Checking multi master requires HA enabled
+  fail:
+    msg: >
+      Multiple kube-master nodes require enable_kubernetes_ha: "yes" in globals.yml,
+      otherwise k3s would start an independent cluster on each master node.
+  when:
+    - groups['kube-master'] | length > 1
+    - not (enable_kubernetes_ha | bool)

@@ -24,7 +24,7 @@ RUNTIME_MAP = {
 }
 
 SOCKET_MAP = {
-    'containerd': '--cri-socket /run/containerd/containerd.sock'
+    'containerd': '--container-runtime-endpoint /run/k3s/containerd/containerd.sock'
 }
 
 

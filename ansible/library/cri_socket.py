@@ -45,7 +45,7 @@ class SocketWorker(object):
         if self.runtime_type != 'containerd':
             raise Exception('Unsupported container runtime: {runtime_type}'.format(
                 runtime_type=self.runtime_type))
-        self.result['cri_socket'] = '/run/containerd/containerd.sock'
+        self.result['cri_socket'] = '/run/k3s/containerd/containerd.sock'
 
 
 def main():
